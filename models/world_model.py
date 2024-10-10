@@ -1,56 +1,66 @@
 # models/world_model.py
 
 import numpy as np
-from scipy.stats import multivariate_normal
+from typing import Tuple, Dict, Any
 
 class ProbabilisticWorldModel:
-    def __init__(self, transition_model, observation_model):
+    def __init__(
+        self,
+        transition_model,
+        observation_model,
+        goal_position: np.ndarray,
+        goal_threshold: float = 0.5
+    ):
         """
         Initializes the ProbabilisticWorldModel.
 
-        :param transition_model: Function(state, action) -> new_state with noise.
-        :param observation_model: Object with methods to compute observation probabilities.
+        :param transition_model: A function that defines state transitions.
+        :param observation_model: A function that defines observations based on the state.
+        :param goal_position: A numpy array representing the goal position in the state space.
+        :param goal_threshold: Distance threshold to consider the goal as reached.
         """
         self.transition_model = transition_model
         self.observation_model = observation_model
-        self.goal_position = None  # To be set externally if needed
-        self.goal_threshold = 1.0  # Default threshold for goal achievement
+        self.goal_position = goal_position
+        self.goal_threshold = goal_threshold
+        self.process_noise_cov = getattr(transition_model, 'process_noise_cov', np.eye(len(goal_position)) * 0.05)
+        self.observation_noise_cov = getattr(observation_model, 'observation_noise_cov', np.eye(len(goal_position)) * 0.1)
 
-    def predict_next_state(self, belief_state, action):
+    def update_belief_state(self, state: Dict[str, Any], observation: np.ndarray) -> Dict[str, Any]:
         """
-        Predicts the next belief state based on the current belief state and action.
+        Updates the belief state based on the observation.
 
-        :param belief_state: Current belief state as a dictionary with 'mean' and 'cov'.
-        :param action: Action taken by the agent as a numpy array.
-        :return: Predicted next belief state as a dictionary with 'mean' and 'cov'.
+        :param state: Current belief state as a dictionary with 'mean' and 'cov'.
+        :param observation: Observation received as a numpy array.
+        :return: Updated belief state.
         """
-        mean = self.transition_model(belief_state['mean'], action)
-        cov = belief_state['cov'] + self.transition_model.noise_cov
-        return {'mean': mean, 'cov': cov}
+        # Example implementation using a simple Kalman Filter update
+        H, R = self.observation_model(observation, state['mean'])
+        S = np.dot(H, np.dot(state['cov'], H.T)) + R
+        K = np.dot(state['cov'], np.dot(H.T, np.linalg.inv(S)))
+        y = observation - np.dot(H, state['mean'])
+        new_mean = state['mean'] + np.dot(K, y)
+        I = np.eye(len(state['mean']))
+        new_cov = np.dot(I - np.dot(K, H), state['cov'])
+        return {'mean': new_mean, 'cov': new_cov}
 
-    def update_belief_state(self, belief_state, observation):
+    def sample_observation(self, belief_state: Dict[str, Any]) -> np.ndarray:
         """
-        Updates the belief state based on the received observation.
-
-        :param belief_state: Current belief state as a dictionary with 'mean' and 'cov'.
-        :param observation: Observation received by the agent as a numpy array.
-        :return: Updated belief state as a dictionary with 'mean' and 'cov'.
-        """
-        # Kalman Filter Update
-        H = self.observation_model.H
-        R = self.observation_model.R
-        S = H @ belief_state['cov'] @ H.T + R
-        K = belief_state['cov'] @ H.T @ np.linalg.inv(S)
-        y = observation - H @ belief_state['mean']
-        mean = belief_state['mean'] + K @ y
-        cov = (np.eye(len(belief_state['mean'])) - K @ H) @ belief_state['cov']
-        return {'mean': mean, 'cov': cov}
-
-    def sample_state(self, belief_state):
-        """
-        Samples a state based on the belief state.
+        Samples an observation based on the current belief state.
 
         :param belief_state: Current belief state as a dictionary with 'mean' and 'cov'.
-        :return: Sampled state as a numpy array.
+        :return: Sampled observation as a numpy array.
         """
-        return np.random.multivariate_normal(belief_state['mean'], belief_state['cov'])
+        mean = belief_state['mean']
+        cov = self.observation_noise_cov
+        return np.random.multivariate_normal(mean, cov)
+
+    def transition_model_func(self, state: np.ndarray, action: Tuple[str, ...]) -> np.ndarray:
+        """
+        Applies the transition model to the current state and action.
+
+        :param state: Current state as a numpy array.
+        :param action: Action taken as a tuple.
+        :return: New state as a numpy array.
+        """
+        return self.transition_model(state, action)

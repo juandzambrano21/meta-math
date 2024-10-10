@@ -1,63 +1,69 @@
 # agents/bayesian_updater.py
 
+from typing import Dict, Tuple
 import numpy as np
-from typing import Dict
-from agents.prior_distribution import PriorDistribution
-from models.world_model import ProbabilisticWorldModel
 from agents.environment_hypothesis import EnvironmentHypothesis
 
+
 class BayesianUpdater:
-    def __init__(self, prior_distribution: PriorDistribution, world_model: ProbabilisticWorldModel):
+    def __init__(self, prior_distribution: Dict[str, float]):
         """
-        Initializes the BayesianUpdater.
+        Initializes the BayesianUpdater with prior probabilities.
 
-        :param prior_distribution: An instance of PriorDistribution.
-        :param world_model: An instance of ProbabilisticWorldModel.
+        :param prior_distribution: A dictionary mapping hypothesis names to their prior probabilities.
         """
-        self.prior_distribution = prior_distribution
-        self.world_model = world_model
-        self.posterior: Dict[EnvironmentHypothesis, float] = self.prior_distribution.get_prior()
+        self.prior_distribution = prior_distribution.copy()
+        self.posterior_distribution: Dict[str, float] = prior_distribution.copy()
 
-    def update(self, action: np.ndarray, observation: np.ndarray) -> None:
+    def update(
+        self,
+        action: Tuple[str, ...],
+        observation: np.ndarray,
+        hypotheses: Dict[str, EnvironmentHypothesis]
+    ):
         """
         Updates the posterior distribution based on the action taken and observation received.
 
-        :param action: The action taken by the agent as a numpy array.
-        :param observation: The observation received by the agent as a numpy array.
+        :param action: The action taken by the agent as a tuple.
+        :param observation: The observation received as a numpy array.
+        :param hypotheses: A dictionary mapping hypothesis names to EnvironmentHypothesis instances.
         """
-        likelihoods: Dict[EnvironmentHypothesis, float] = {}
+        likelihoods: Dict[str, float] = {}
         total_likelihood = 0.0
 
-        # Compute likelihood for each hypothesis
-        for hypothesis, prior_prob in self.posterior.items():
-            likelihood = hypothesis.compute_likelihood(action, observation)
-            likelihoods[hypothesis] = likelihood
-            total_likelihood += likelihood * prior_prob
+        # Calculate likelihood for each hypothesis
+        for hypo_name, hypo in hypotheses.items():
+            # Predict the next state based on the action
+            hypo.predict_next_state(action)
 
-        # Update posterior probabilities
-        new_posterior: Dict[EnvironmentHypothesis, float] = {}
-        for hypothesis in self.posterior:
-            prior_prob = self.posterior[hypothesis]
-            likelihood = likelihoods[hypothesis]
+            # Compute the likelihood of the observation given the new state
+            likelihood = hypo.compute_likelihood(observation)
+            likelihoods[hypo_name] = likelihood
+
+            # Accumulate total likelihood weighted by prior
+            total_likelihood += likelihood * self.prior_distribution[hypo_name]
+
+        # Update posterior probabilities using Bayes' theorem
+        for hypo_name in self.posterior_distribution:
+            prior = self.prior_distribution[hypo_name]
+            likelihood = likelihoods[hypo_name]
             if total_likelihood > 0:
-                posterior_prob = (likelihood * prior_prob) / total_likelihood
+                posterior = (likelihood * prior) / total_likelihood
             else:
-                # Avoid division by zero by retaining prior probability
-                posterior_prob = prior_prob
-            new_posterior[hypothesis] = posterior_prob
+                # Avoid division by zero; retain prior if total likelihood is zero
+                posterior = prior
+            self.posterior_distribution[hypo_name] = posterior
 
-        self.posterior = new_posterior
-
-    def get_posterior(self) -> Dict[EnvironmentHypothesis, float]:
+    def get_posterior(self) -> Dict[str, float]:
         """
         Returns the current posterior distribution.
 
-        :return: A dictionary mapping EnvironmentHypothesis instances to their posterior probabilities.
+        :return: A dictionary mapping hypothesis names to their posterior probabilities.
         """
-        return self.posterior.copy()
+        return self.posterior_distribution.copy()
 
-    def reset(self) -> None:
+    def reset(self):
         """
-        Resets the posterior to the prior distribution.
+        Resets the posterior distribution to the prior distribution.
         """
-        self.posterior = self.prior_distribution.get_prior()
+        self.posterior_distribution = self.prior_distribution.copy()

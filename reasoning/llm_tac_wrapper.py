@@ -3,21 +3,13 @@
 import openai
 import time
 from collections import deque
-import numpy as np
-from typing import Tuple, List, Dict
+from typing import Tuple, Dict
 from utils.tokenizer import Tokenizer
-
 
 class LLMTACWrapper:
     def __init__(self, api_key: str, model_name: str = 'gpt-4o', tokenizer: 'Tokenizer' = None, max_retries: int = 3, backoff_factor: int = 2):
         """
         Initializes the LLMTACWrapper.
-
-        :param api_key: OpenAI API key.
-        :param model_name: The model to use.
-        :param tokenizer: An instance of Tokenizer.
-        :param max_retries: Maximum number of retries for API calls.
-        :param backoff_factor: Factor for exponential backoff between retries.
         """
         openai.api_key = api_key
         self.model_name = model_name
@@ -27,18 +19,12 @@ class LLMTACWrapper:
         self.backoff_factor = backoff_factor
         self.rate_limit_queue = deque(maxlen=20)  # Queue for rate limiting
 
-    def generate_reasoning_trace(self, goal: str, current_state: np.ndarray, current_node: str, token_budget: int) -> Tuple[str, int]:
+    def generate_reasoning_trace(self, goal: str, current_state: str, current_node: str, token_budget: int) -> Tuple[str, int]:
         """
         Generates a reasoning trace (Coq code) using the LLM.
-
-        :param goal: The agent's goal.
-        :param current_state: The agent's current state in the environment.
-        :param current_node: The agent's current node in the ontology.
-        :param token_budget: The maximum number of tokens allowed.
-        :return: A tuple (reasoning_trace, tokens_used).
         """
         # Create a hashable cache key
-        cache_key = (goal, tuple(current_state), current_node)
+        cache_key = (goal, str(current_state), current_node)
 
         # Check if the prompt is in the cache
         if cache_key in self.cached_prompts:
@@ -46,9 +32,7 @@ class LLMTACWrapper:
             return cached_response['reasoning_trace'], cached_response['tokens_used']
 
         prompt = self._create_prompt(goal, current_state, current_node, token_budget)
-        print("=================PROMPT===========")
         print(prompt)
-        print("=================PROMPT===========")
 
         prompt_tokens = self.tokenizer.count_tokens(prompt)
         max_completion_tokens = token_budget - prompt_tokens
@@ -80,6 +64,7 @@ class LLMTACWrapper:
                 )
 
                 reasoning_trace = response.choices[0].message.content.strip()
+                print(reasoning_trace)
                 reasoning_tokens = self.tokenizer.count_tokens(reasoning_trace)
                 total_tokens_used = reasoning_tokens + prompt_tokens
 
@@ -102,27 +87,32 @@ class LLMTACWrapper:
                 time.sleep(self.backoff_factor ** attempt)
 
         print("Failed to generate reasoning trace after multiple attempts.")
-        return "", 0 
+        return "", 0
 
-    def _create_prompt(self, goal: str, current_state: np.ndarray, current_node: str, token_budget: int) -> str:
-        
+    def _create_prompt(self, goal: str, current_state: str, current_node: str, token_budget: int) -> str:
         return f"""
-            Goal: {goal}
-            Current State: {current_state.tolist()}
-            Current Node: {current_node}
-            Token Budget: {token_budget}
+        Goal: {goal}
+        Current Proof State: {current_state}
+        Token Budget: {token_budget}
 
-            Generate reasoning steps in the following exact format:
-            - PredictAction(Ax)
-            - UpdateState(Sx, Ay)
-            - PredictObservation(Sx, Ox)
-            - EvaluateGoal(Sx)
-            - MoveTo(NodeID)
-            - Inspect(NodeID)
+        Available Actions:
+        - PredictAction(ApplyTactic('tactic_name'))
+        - PredictAction(QueryOntology('query_type', 'query_param'))
+        - PredictAction(ProofStrategy('strategy_name'))
+        - EvaluateGoal(Sx)
 
-            Provide only the reasoning steps without any additional explanation.
+        Instructions:
+        - If the goal is provable within Homotopy Type Theory, generate reasoning steps in the exact format below.
+        - If the goal is an axiom or cannot be proven, respond with "- Axiom or unprovable statement. No reasoning steps generated."
+
+        Generate reasoning steps in the following exact format, one per line:
+        - PredictAction(ApplyTactic('tactic_name'))
+        - PredictAction(QueryOntology('query_type', 'query_param'))
+        - PredictAction(ProofStrategy('strategy_name'))
+        - EvaluateGoal(Sx)
+
+        Provide only the reasoning steps without any additional explanation or text.
 """
-
     def _handle_rate_limit(self):
         """Handles rate limiting using a deque."""
         current_time = time.time()

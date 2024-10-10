@@ -1,4 +1,6 @@
 .env
 fix.txt
-concat.sh
+concatenate.sh
 venv/
+allcode.txt
+*.pyc

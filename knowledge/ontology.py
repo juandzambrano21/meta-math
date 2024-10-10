@@ -24,55 +24,41 @@ class Ontology:
         """
         Parses the ontology data and constructs the graph.
         """
-        # Add Universes
-        for universe in ontology_data.get('Universes', []):
-            uid = universe['id']
-            self.graph.add_node(uid, kind='Universe', **universe)
-            # If 'Contains' is specified, add edges
-            for contained in universe.get('Contains', []):
-                self.graph.add_edge(uid, contained, relation='contains')
+        all_entries = []
 
-        # Add Types
-        for type_def in ontology_data.get('Types', []):
-            tid = type_def['id']
-            self.graph.add_node(tid, kind='Type', **type_def)
-            # Parse 'Type' field to find dependencies
-            dependencies = self.extract_dependencies(type_def.get('Type', ''))
+        # Collect all ontology entries and assign 'Category'
+        for category, entries in ontology_data.items():
+            for entry in entries:
+                entry['Category'] = category  # Use provided categories
+                all_entries.append(entry)
+
+        # Add all entries as nodes
+        for entry in all_entries:
+            eid = entry['id']
+            self.graph.add_node(eid, **entry)
+            # Extract dependencies from 'Type', 'Proposition', 'Definition', etc.
+            dependencies = []
+            for field in ['Type', 'Proposition', 'Definition']:
+                if field in entry:
+                    dependencies.extend(self.extract_dependencies(entry[field]))
+            # Add edges for dependencies
             for dep in dependencies:
-                if dep != tid and dep in self.graph.nodes:
-                    self.graph.add_edge(tid, dep, relation='depends_on')
+                if dep != eid and dep in self.graph.nodes:
+                    self.graph.add_edge(eid, dep, relation='depends_on')
 
-        # Add Theorems
-        for theorem in ontology_data.get('Theorems', []):
-            tid = theorem['id']
-            self.graph.add_node(tid, kind='Theorem', **theorem)
-            # Parse 'Proposition' to find dependencies
-            dependencies = self.extract_dependencies(theorem.get('Proposition', ''))
-            for dep in dependencies:
-                if dep != tid and dep in self.graph.nodes:
-                    self.graph.add_edge(tid, dep, relation='uses')
+            # Handle special cases like 'Constructors'
+            if 'Constructors' in entry:
+                for constructor in entry['Constructors']:
+                    for cname, cdef in constructor.items():
+                        cid = f"{eid}_{cname}"
+                        self.graph.add_node(cid, Category='Constructor', definition=cdef)
+                        self.graph.add_edge(eid, cid, relation='has_constructor')
 
-        # Add HITypeDefinitions
-        for hi_type in ontology_data.get('HITypeDefinitions', []):
-            hid = hi_type['id']
-            self.graph.add_node(hid, kind='HIType', **hi_type)
-            # Add constructors
-            for constructor in hi_type.get('Constructors', []):
-                for cname, cdef in constructor.items():
-                    cid = f"{hid}_{cname}"
-                    self.graph.add_node(cid, kind='Constructor', definition=cdef)
-                    self.graph.add_edge(hid, cid, relation='has_constructor')
-
-        # Add MetaMathematics
-        for meta in ontology_data.get('MetaMathematics', []):
-            mid = meta['id']
-            self.graph.add_node(mid, kind='MetaMathematics', **meta)
-            # Parse 'Proposition' or 'Definition' to find dependencies
-            dependencies = self.extract_dependencies(meta.get('Proposition', '') + meta.get('Definition', ''))
-            for dep in dependencies:
-                if dep != mid and dep in self.graph.nodes:
-                    self.graph.add_edge(mid, dep, relation='references')
-
+            # Handle 'Contains' relationships
+            if 'Contains' in entry:
+                for contained in entry['Contains']:
+                    self.graph.add_edge(eid, contained, relation='contains')
+                    
     def extract_dependencies(self, text):
         """
         Extracts dependencies (node IDs) from the given text.
