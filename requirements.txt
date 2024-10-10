@@ -1,0 +1,10 @@
+numpy
+torch
+lark-parser
+networkx
+openai
+paramiko
+docker
+scipy
+matplotlib
+transformers
