@@ -19,7 +19,7 @@ class ReasoningInterpreter:
         """
         for step in reasoning_steps:
             step_type = step[0]
-            if step_type == 'PredictAction':
+            if step_type == 'PredictAgit ction':
                 action = step[1]
                 if action[0] == 'ApplyTactic':
                     self.handle_apply_tactic(action[1])
@@ -47,11 +47,28 @@ class ReasoningInterpreter:
         Handles the ApplyTactic reasoning step.
         """
         print(f"Applying tactic: {tactic}")
-        success = self.agent.environment.apply_tactic(tactic)
-        if success:
+
+        coq_code, tokens_used = self.agent.llm_tac_wrapper.generate_coq_code_for_tactic(
+            tactic,
+            self.agent.environment.proof_state['goal']
+        )
+        print("Generated Coq Code:\n", coq_code)  # Debug statement
+        self.agent.token_budget -= tokens_used
+
+        if not coq_code.strip():
+            print("Generated Coq code is empty. Skipping execution.")
+            return
+
+        results, metadata = self.coq_engine.forward(coq_code)
+
+        if metadata.get('status') == 'success':
+            self.agent.environment.proof_state['tactics_applied'].append(tactic)
+            self.agent.environment.update_proof_state_after_success(tactic)
             print(f"Tactic '{tactic}' applied successfully.")
         else:
+            print(f"Coq execution failed: {metadata.get('message', '')}")
             print(f"Tactic '{tactic}' failed.")
+
 
     def handle_query_ontology(self, query_type: str, query_param: str):
         """
@@ -78,7 +95,6 @@ class ReasoningInterpreter:
         """
         print(f"Interpreted UpdateState: State {state_id}, Action {action_id}")
         # Update the agent's belief state based on the action
-        # For symbolic states, this might involve more complex logic
         pass
 
     def handle_predict_observation(self, state_id: str, observation_id: str):
@@ -86,7 +102,6 @@ class ReasoningInterpreter:
         Handles the PredictObservation reasoning step.
         """
         print(f"Interpreted PredictObservation: From State {state_id} predict Observation {observation_id}")
-        # Placeholder for observation prediction
         pass
 
     def handle_evaluate_goal(self, state_id: str):
@@ -105,5 +120,4 @@ class ReasoningInterpreter:
         Handles the scenario where the goal is identified as an axiom or unprovable statement.
         """
         print("Detected an axiom or unprovable statement. No reasoning steps will be generated.")
-        # Optionally, set a flag or take other actions to handle this scenario
-        self.agent.environment.done = True  # End the episode as the proof cannot be completed
+        self.agent.environment.done = True

@@ -91,7 +91,7 @@ class TokenAwareMCTS:
         :param token_budget: Remaining token budget.
         :param current_goal: The current proof goal.
         :param num_simulations: Number of simulations to run.
-        :return: The best action determined by MCTS or None if no action is found.
+        :return: The best action determined by MCTS.
         """
         if 'mean' not in root_belief_state or 'cov' not in root_belief_state:
             print("Invalid root belief state. Cannot perform MCTS search.")
@@ -106,7 +106,9 @@ class TokenAwareMCTS:
             self._backup(node, reward)
 
         best_action = self._best_action(root_node)
+
         return best_action
+
 
     def _tree_policy(self, node: TokenAwareMCTSNode, current_goal: str) -> TokenAwareMCTSNode:
         """
@@ -145,9 +147,14 @@ class TokenAwareMCTS:
             return node  # Cannot expand due to token budget
 
         # Predict next belief state
-        next_mean = self.world_model.transition_model(node.belief_state['mean'], action, current_goal)
-        next_cov = node.belief_state['cov'] + self.world_model.process_noise_cov
+        next_mean, tokens_used = self.world_model.transition_model_func(node.belief_state['mean'], action, current_goal)
 
+        if node.token_budget < tokens_used:
+            return node 
+
+        new_token_budget = node.token_budget - tokens_used
+
+        next_cov = node.belief_state['cov'] + self.world_model.process_noise_cov
         next_belief_state = {'mean': next_mean, 'cov': next_cov}
 
         # Simulate observation based on the world model
@@ -178,13 +185,13 @@ class TokenAwareMCTS:
         # Create child node
         child_node = TokenAwareMCTSNode(
             belief_state=updated_belief_state,
-            token_budget=node.token_budget - action_token_cost,
+            token_budget=new_token_budget,
             parent=node,
             action=action,
-            token_cost=node.token_cost + action_token_cost,
+            token_cost=node.token_cost + tokens_used,
             current_goal=current_goal
         )
-        child_node.world_model = self.world_model  # Assign world_model for goal checking
+        child_node.world_model = self.world_model
         node.children.append(child_node)
 
         return child_node

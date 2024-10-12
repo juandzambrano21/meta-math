@@ -1,5 +1,3 @@
-# agents/environment_hypothesis.py
-
 import numpy as np
 from typing import Callable, Tuple, Optional, Dict
 from scipy.stats import multivariate_normal
@@ -77,15 +75,20 @@ class EnvironmentHypothesis:
         # Kalman Filter Update
         H, R = self.observation_model(observation, self.belief_state['mean'])
 
+        # Innovation or measurement residual
+        y = observation - H @ self.belief_state['mean']
         S = H @ self.belief_state['cov'] @ H.T + R
+
         try:
+            # Kalman Gain
             K = self.belief_state['cov'] @ H.T @ np.linalg.inv(S)
         except np.linalg.LinAlgError:
             print(f"LinAlgError: Cannot invert S matrix with covariance:\n{S}")
-            K = np.zeros_like(H).T
+            K = np.zeros((self.belief_state['cov'].shape[0], H.shape[0]))
 
-        y = observation - H @ self.belief_state['mean']
+        # Updated state estimate
         new_mean = self.belief_state['mean'] + K @ y
+        # Updated estimate covariance
         new_cov = (np.eye(len(self.belief_state['mean'])) - K @ H) @ self.belief_state['cov']
 
         self.belief_state = {

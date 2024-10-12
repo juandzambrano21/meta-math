@@ -28,34 +28,40 @@ class ProbabilisticWorldModel:
 
     def update_belief_state(self, state: Dict[str, Any], observation: np.ndarray) -> Dict[str, Any]:
         """
-        Updates the belief state based on the observation.
+        Updates the belief state based on the observation using the Kalman Filter.
 
         :param state: Current belief state as a dictionary with 'mean' and 'cov'.
         :param observation: Observation received as a numpy array.
         :return: Updated belief state.
         """
-        # Example implementation using a simple Kalman Filter update
         H, R = self.observation_model(observation, state['mean'])
-        S = np.dot(H, np.dot(state['cov'], H.T)) + R
-        K = np.dot(state['cov'], np.dot(H.T, np.linalg.inv(S)))
-        y = observation - np.dot(H, state['mean'])
-        new_mean = state['mean'] + np.dot(K, y)
+
+        # Innovation or measurement residual
+        y = observation - H @ state['mean']
+        S = H @ state['cov'] @ H.T + R
+
+        try:
+            # Kalman Gain
+            K = state['cov'] @ H.T @ np.linalg.inv(S)
+        except np.linalg.LinAlgError:
+            print(f"LinAlgError: Cannot invert S matrix with covariance:\n{S}")
+            K = np.zeros((state['cov'].shape[0], H.shape[0]))
+
+        # Updated state estimate
+        new_mean = state['mean'] + K @ y
+        # Updated estimate covariance
         I = np.eye(len(state['mean']))
-        new_cov = np.dot(I - np.dot(K, H), state['cov'])
+        new_cov = (I - K @ H) @ state['cov']
+
         return {'mean': new_mean, 'cov': new_cov}
 
     def sample_observation(self, belief_state: Dict[str, Any]) -> np.ndarray:
-        """
-        Samples an observation based on the current belief state.
-
-        :param belief_state: Current belief state as a dictionary with 'mean' and 'cov'.
-        :return: Sampled observation as a numpy array.
-        """
         mean = belief_state['mean']
         cov = self.observation_noise_cov
         return np.random.multivariate_normal(mean, cov)
 
-    def transition_model_func(self, state: np.ndarray, action: Tuple[str, ...]) -> np.ndarray:
+    def transition_model_func(self, state: np.ndarray, action: Tuple[str, ...], current_goal: str) -> Tuple[np.ndarray, int]:
+
         """
         Applies the transition model to the current state and action.
 
@@ -63,4 +69,4 @@ class ProbabilisticWorldModel:
         :param action: Action taken as a tuple.
         :return: New state as a numpy array.
         """
-        return self.transition_model(state, action)
+        return self.transition_model(state, action, current_goal)

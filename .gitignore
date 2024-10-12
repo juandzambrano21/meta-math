@@ -3,4 +3,5 @@ fix.txt
 concatenate.sh
 venv/
 allcode.txt
-*.pyc
+.pyc
+__pycache__

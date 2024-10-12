@@ -198,6 +198,9 @@ class CoqEngine:
         tmpfile_path: Optional[str] = None
         metadata: Dict[str, Any] = {}
         try:
+            print("=========================================")
+            print(code)
+            print("=========================================")
             with tempfile.NamedTemporaryFile(delete=False, suffix=".v") as tmpfile:
                 tmpfile.write(code.encode())
                 tmpfile_path = tmpfile.name
@@ -272,7 +275,7 @@ class CoqEngine:
             ssh.exec_command(f"rm {remote_path}")
             ssh.close()
 
-            if "Error" in output or "Error" in error:
+            if "Error" in output or "Error" in error or "Syntax error" in output or "Syntax error" in error:
                 return output + error, {'status': 'failure'}
             elif not output and not error:
                 return "Coq program executed successfully with no output.", {'status': 'success'}

@@ -12,24 +12,28 @@ from utils.tokenizer import Tokenizer
 from utils.observation_encoder import ObservationEncoder
 from knowledge.ontology import Ontology
 from environments.ontology_navigation import OntologyNavigationEnv
-from models.transition_model import TransitionModel  # Import the TransitionModel class
+from models.transition_model import TransitionModel
 import numpy as np
 from typing import Tuple
 
 def main():
-    # Load environment variables from .env file
     load_dotenv()
-
-    # Initialize tokenizer
     tokenizer = Tokenizer()
-
-    # Initialize CoqEngine
     coq_engine = CoqEngine()
-
-    # Initialize observation encoder
-    # For proof state, input_dim depends on the features extracted from proof_state
     observation_encoder = ObservationEncoder(input_dim=2, embedding_dim=32)
     observation_encoder.eval()
+
+    api_key = os.getenv('OPENAI_API_KEY')
+    if not api_key:
+        raise ValueError("OpenAI API key not found. Please set 'OPENAI_API_KEY' in your environment variables.")
+    llm_tac_wrapper = LLMTACWrapper(api_key=api_key, model_name='gpt-4', tokenizer=tokenizer)
+
+    transition_model_instance = TransitionModel(
+        state_dim=2,
+        coq_engine=coq_engine,
+        tokenizer=tokenizer,
+        llm_tac_wrapper=llm_tac_wrapper
+    )
 
     # Load ontology JSON
     ontology_json = '''
@@ -69,11 +73,11 @@ def main():
           "Complexity": "Fundamental"
         },
         {
-          "id": "CircleHIType",
-          "Proposition": "Circle is a higher inductive type.",
-          "ProofTerm": "circle_hitype_proof",
+          "id": "GoalStatement",
+          "Proposition": "∀ P Q : Prop, ¬(P ∨ Q) ↔ ¬P ∧ ¬Q",
+          "ProofTerm": "",
           "ProvableIn": "HoTT",
-          "Description": "The circle is defined as a higher inductive type with specific constructors.",
+          "Description": "De Morgan's Law for propositional logic.",
           "Complexity": "Intermediate"
         }
       ],
@@ -105,23 +109,16 @@ def main():
     }
     '''
 
-    # Initialize the ontology
     ontology = Ontology(ontology_json)
 
     # Initialize environment with a provable goal
     env = OntologyNavigationEnv(
         ontology=ontology,
-        goal_node_id='CircleHIType'  # Set your desired provable goal node ID
+        goal_node_id='GoalStatement',  # The ID of the goal we want to prove
+        coq_engine=coq_engine  # Pass CoqEngine to the environment
     )
 
-    # Initialize TransitionModel with CoqEngine and Tokenizer
-    transition_model_instance = TransitionModel(
-        state_dim=2,  # Adjust based on your state vector dimensionality
-        coq_engine=coq_engine,
-        tokenizer=tokenizer
-    )
-
-    # Define observation_model function as before
+    # Define observation_model function
     def observation_model(observation: np.ndarray, new_state: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
         Defines the observation model.
@@ -137,7 +134,7 @@ def main():
     # Create environment hypotheses
     h1 = EnvironmentHypothesis(
         name="H1",
-        transition_model=transition_model_instance,  # Use the TransitionModel instance
+        transition_model=transition_model_instance,
         observation_model=observation_model,
         process_noise_cov=transition_model_instance.process_noise_cov,
         observation_noise_cov=np.eye(2) * 0.1,
@@ -148,22 +145,13 @@ def main():
 
     h2 = EnvironmentHypothesis(
         name="H2",
-        transition_model=transition_model_instance,  # Use the TransitionModel instance
+        transition_model=transition_model_instance,
         observation_model=observation_model,
         process_noise_cov=transition_model_instance.process_noise_cov,
         observation_noise_cov=np.eye(2) * 0.1,
         is_dynamic=False
     )
     h2.initialize_belief_state(initial_state=initial_state.copy())
-
-    # Initialize world model with goal position and threshold
-    goal_position = np.array([5.0, 5.0])  # Example goal position; adjust as needed
-    world_model = ProbabilisticWorldModel(
-        transition_model=transition_model_instance,  # Use the TransitionModel instance
-        observation_model=observation_model,
-        goal_position=goal_position,
-        goal_threshold=1.0  # Example threshold; adjust as needed
-    )
 
     # Initialize reward function
     reward_function = TokenAwareRewardFunction(
@@ -174,24 +162,25 @@ def main():
         token_budget=1000
     )
 
-    # Initialize LLM-TAC wrapper
-    api_key = os.getenv('OPENAI_API_KEY')
-    if not api_key:
-        raise ValueError("OpenAI API key not found. Please set 'OPENAI_API_KEY' in your environment variables.")
+    # Initialize world model
+    goal_position = np.array([5.0, 5.0])  # Example goal position
+    world_model = ProbabilisticWorldModel(
+        transition_model=transition_model_instance,
+        observation_model=observation_model,
+        goal_position=goal_position,
+        goal_threshold=1.0
+    )
 
-    llm_tac_wrapper = LLMTACWrapper(api_key=api_key, model_name='gpt-4', tokenizer=tokenizer)
-
-    # Generate list of actions based on the new action space
-    tactics = ['intro', 'induction', 'apply', 'split', 'destruct', 'contradiction']
-    # Remove 'TryLemma' if it's not defined, or ensure it's handled appropriately
+    # Generate list of actions
+    tactics = ['intro', 'intros', 'split', 'apply', 'assumption', 'contradiction']
     queries = [('FindRelatedType', type_name) for type_name in ['Type', 'Term', 'CircleHIType']]
-    strategies = ['SimplifyGoal']  # Removed 'TryLemma' to avoid undefined tactic errors
+    strategies = ['SimplifyGoal']
 
     actions = [('ApplyTactic', tactic) for tactic in tactics] + \
               [('QueryOntology', *query) for query in queries] + \
               [('ProofStrategy', strategy) for strategy in strategies]
 
-    # Initialize agent with the new actions and environment
+    # Initialize agent
     agent = LLMAIXITACAgent(
         hypotheses=[h1, h2],
         actions=actions,
@@ -209,7 +198,7 @@ def main():
     # Reset environment
     observation = env.reset()
     env.render()
-    goal = '¬(𝑃∨𝑄)⇔¬𝑃∧¬𝑄'  
+    goal = ontology.graph.nodes['GoalStatement']['Proposition']
 
     # Interaction loop
     while not env.done and agent.token_budget > 200:
@@ -228,12 +217,10 @@ def main():
         # Display action and reward
         print(f"Action: {action}, Observation: {observation}, Reward: {reward}, Remaining Tokens: {agent.token_budget}\n")
 
-
     if env.done:
         print("Agent has successfully completed the proof!")
     else:
         print("Agent failed to complete the proof within the token budget.")
-
 
 if __name__ == "__main__":
     main()
