@@ -42,6 +42,7 @@ class TokenAwareMCTSNode:
         self.untried_actions: List[Tuple[str, ...]] = []
         self.world_model: Optional[ProbabilisticWorldModel] = None  # To be assigned externally
         self.current_goal = current_goal  # Store current_goal in the node
+        self.current_token_budget = 0
 
     def is_fully_expanded(self, actions: List[Tuple[str, ...]]) -> bool:
         return len(self.children) == len(actions)
@@ -83,7 +84,7 @@ class TokenAwareMCTS:
         self.max_depth = max_depth
         self.exploration_constant = exploration_constant
 
-    def search(self, root_belief_state: Dict[str, Any], token_budget: int, current_goal: str, num_simulations: int = 1000) -> Optional[Tuple[str, ...]]:
+    def search(self, root_belief_state: Dict[str, Any], token_budget: int, current_goal: str, num_simulations: int = 1000) -> Tuple[Optional[Tuple[str, ...]], int]:
         """
         Performs MCTS search to select the best action.
 
@@ -91,14 +92,17 @@ class TokenAwareMCTS:
         :param token_budget: Remaining token budget.
         :param current_goal: The current proof goal.
         :param num_simulations: Number of simulations to run.
-        :return: The best action determined by MCTS.
+        :return: The best action determined by MCTS and the tokens used.
         """
+        self.current_token_budget = token_budget
+
         if 'mean' not in root_belief_state or 'cov' not in root_belief_state:
             print("Invalid root belief state. Cannot perform MCTS search.")
-            return None
+            return None, 0
 
         root_node = TokenAwareMCTSNode(root_belief_state, token_budget, current_goal=current_goal)
-        root_node.world_model = self.world_model  # Assign world_model to root_node for goal checking
+        root_node.world_model = self.world_model
+
 
         for _ in range(num_simulations):
             node = self._tree_policy(root_node, current_goal)
@@ -106,8 +110,11 @@ class TokenAwareMCTS:
             self._backup(node, reward)
 
         best_action = self._best_action(root_node)
+        tokens_used = root_node.token_cost
 
-        return best_action
+        self.current_token_budget -= tokens_used
+
+        return best_action, tokens_used
 
 
     def _tree_policy(self, node: TokenAwareMCTSNode, current_goal: str) -> TokenAwareMCTSNode:
@@ -145,17 +152,19 @@ class TokenAwareMCTS:
 
         if node.token_budget < action_token_cost:
             return node  # Cannot expand due to token budget
-
-        # Predict next belief state
+        # Predict next belief state and tokens used
         next_mean, tokens_used = self.world_model.transition_model_func(node.belief_state['mean'], action, current_goal)
 
         if node.token_budget < tokens_used:
-            return node 
+            return node  # Cannot expand due to token budget
 
         new_token_budget = node.token_budget - tokens_used
 
         next_cov = node.belief_state['cov'] + self.world_model.process_noise_cov
         next_belief_state = {'mean': next_mean, 'cov': next_cov}
+
+        #Updating budget
+        self.current_token_budget -= action_token_cost
 
         # Simulate observation based on the world model
         observation = self.world_model.sample_observation(next_belief_state)
@@ -277,13 +286,6 @@ class TokenAwareMCTS:
         return self.world_model.sample_observation(belief_state)
 
     def _simulate(self, node: TokenAwareMCTSNode, current_goal: str) -> float:
-        """
-        Simulates a reward from the node using a rollout policy.
-
-        :param node: The node from which to start simulation.
-        :param current_goal: The current proof goal.
-        :return: Simulated cumulative reward.
-        """
         current_belief = node.belief_state.copy()
         token_budget = node.token_budget
         total_reward = 0.0
@@ -299,7 +301,13 @@ class TokenAwareMCTS:
                 break
 
             # Predict next belief state
-            next_mean = self.world_model.transition_model(current_belief['mean'], action, current_goal)
+            next_mean, tokens_used = self.world_model.transition_model_func(current_belief['mean'], action, current_goal)
+
+            # Check if token budget allows for the tokens used
+            if token_budget < tokens_used:
+                break
+            token_budget -= tokens_used
+
             next_cov = current_belief['cov'] + self.world_model.process_noise_cov
             next_belief_state = {'mean': next_mean, 'cov': next_cov}
 
@@ -319,20 +327,19 @@ class TokenAwareMCTS:
             distance_to_goal = np.linalg.norm(observation - self.world_model.goal_position)
             reward = self.reward_function.compute_reward(
                 base_reward=-distance_to_goal,
-                tokens_used=action_token_cost,
+                tokens_used=action_token_cost + tokens_used,  # Include tokens used in transition
                 exploration=exploration,
                 reasoning_quality=reasoning_quality
             )
 
             # Incorporate token efficiency into reward
-            token_efficiency = self._compute_token_efficiency(reward, action_token_cost)
+            token_efficiency = self._compute_token_efficiency(reward, action_token_cost + tokens_used)
             reward += token_efficiency
 
             total_reward += reward
 
             # Update for next simulation step
             current_belief = updated_belief_state
-            token_budget -= action_token_cost
             depth += 1
 
         return total_reward

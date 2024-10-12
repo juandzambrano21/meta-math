@@ -45,23 +45,23 @@ class EnvironmentHypothesis:
             'cov': initial_covariance
         }
 
-    def predict_next_state(self, action: Tuple[str, ...]):
+
+    def predict_next_state(self, action: Tuple[str, ...], current_goal: str):
         """
         Predicts the next belief state based on the action taken.
-
-        :param action: The action taken by the agent as a tuple.
         """
         if self.belief_state is None:
             raise ValueError("Belief state not initialized.")
 
         # Predict the next state using the transition model
-        new_mean = self.transition_model(self.belief_state['mean'], action)
+        new_mean, _ = self.transition_model(self.belief_state['mean'], action, current_goal)
         new_cov = self.belief_state['cov'] + self.process_noise_cov
 
         self.belief_state = {
             'mean': new_mean,
             'cov': new_cov
         }
+
 
     def update_belief_state(self, observation: np.ndarray):
         """

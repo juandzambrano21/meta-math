@@ -16,17 +16,14 @@ class BayesianUpdater:
         self.posterior_distribution: Dict[str, float] = prior_distribution.copy()
 
     def update(
-        self,
-        action: Tuple[str, ...],
-        observation: np.ndarray,
-        hypotheses: Dict[str, EnvironmentHypothesis]
-    ):
+                self,
+                action: Tuple[str, ...],
+                observation: np.ndarray,
+                hypotheses: Dict[str, EnvironmentHypothesis],
+                current_goal: str
+        ):
         """
         Updates the posterior distribution based on the action taken and observation received.
-
-        :param action: The action taken by the agent as a tuple.
-        :param observation: The observation received as a numpy array.
-        :param hypotheses: A dictionary mapping hypothesis names to EnvironmentHypothesis instances.
         """
         likelihoods: Dict[str, float] = {}
         total_likelihood = 0.0
@@ -34,7 +31,7 @@ class BayesianUpdater:
         # Calculate likelihood for each hypothesis
         for hypo_name, hypo in hypotheses.items():
             # Predict the next state based on the action
-            hypo.predict_next_state(action)
+            hypo.predict_next_state(action, current_goal)
 
             # Compute the likelihood of the observation given the new state
             likelihood = hypo.compute_likelihood(observation)

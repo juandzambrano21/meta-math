@@ -37,6 +37,7 @@ class TransitionModel:
         :param current_goal: The current proof goal as a string.
         :return: Tuple of predicted next state and tokens used.
         """
+        print(f"TransitionModel called with state: {state}, type: {type(state)}, shape: {state.shape}")
         if not isinstance(state, np.ndarray):
             raise TypeError("State must be a numpy array.")
 
@@ -70,13 +71,6 @@ class TransitionModel:
         return updated_state, tokens_used
 
     def generate_coq_code(self, action: Tuple[str, ...], current_goal: str) -> Tuple[str, int]:
-        """
-        Generates Coq code using the LLM based on the action and current goal.
-
-        :param action: The action taken as a tuple.
-        :param current_goal: The current proof goal as a string.
-        :return: Tuple of the generated Coq code and tokens used.
-        """
         action_type = action[0]
         action_param = action[1] if len(action) > 1 else None
 
@@ -95,7 +89,7 @@ class TransitionModel:
             strategy = action_param
             prompt = f"""You are a Coq expert assistant.
 
-                        Write a Coq proof applying the tactic '{tactic}' to prove the following goal:
+                        Apply the proof strategy '{strategy}' to prove the following goal:
 
                         {current_goal}
 
@@ -110,6 +104,7 @@ class TransitionModel:
         coq_code, tokens_used = self.llm_tac_wrapper.generate_coq_code_from_prompt(prompt)
 
         return coq_code, tokens_used
+
 
     def update_state(self, state: np.ndarray, success: bool) -> np.ndarray:
         """

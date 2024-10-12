@@ -12,7 +12,7 @@ from utils.tokenizer import Tokenizer
 from utils.observation_encoder import ObservationEncoder
 from knowledge.ontology import Ontology
 from environments.ontology_navigation import OntologyNavigationEnv
-from models.transition_model import TransitionModel
+from models.transition_model import TransitionModel  # Import the TransitionModel class
 import numpy as np
 from typing import Tuple
 
@@ -26,7 +26,7 @@ def main():
     api_key = os.getenv('OPENAI_API_KEY')
     if not api_key:
         raise ValueError("OpenAI API key not found. Please set 'OPENAI_API_KEY' in your environment variables.")
-    llm_tac_wrapper = LLMTACWrapper(api_key=api_key, model_name='gpt-4', tokenizer=tokenizer)
+    llm_tac_wrapper = LLMTACWrapper(api_key=api_key, model_name='gpt-4o', tokenizer=tokenizer)
 
     transition_model_instance = TransitionModel(
         state_dim=2,
@@ -34,6 +34,7 @@ def main():
         tokenizer=tokenizer,
         llm_tac_wrapper=llm_tac_wrapper
     )
+
 
     # Load ontology JSON
     ontology_json = '''
@@ -73,11 +74,11 @@ def main():
           "Complexity": "Fundamental"
         },
         {
-          "id": "GoalStatement",
-          "Proposition": "∀ P Q : Prop, ¬(P ∨ Q) ↔ ¬P ∧ ¬Q",
-          "ProofTerm": "",
+          "id": "CircleHIType",
+          "Proposition": "Circle is a higher inductive type.",
+          "ProofTerm": "circle_hitype_proof",
           "ProvableIn": "HoTT",
-          "Description": "De Morgan's Law for propositional logic.",
+          "Description": "The circle is defined as a higher inductive type with specific constructors.",
           "Complexity": "Intermediate"
         }
       ],
@@ -114,11 +115,18 @@ def main():
     # Initialize environment with a provable goal
     env = OntologyNavigationEnv(
         ontology=ontology,
-        goal_node_id='GoalStatement',  # The ID of the goal we want to prove
-        coq_engine=coq_engine  # Pass CoqEngine to the environment
+        goal_node_id='GodelIncompleteness1', 
+        coq_engine=coq_engine
     )
 
-    # Define observation_model function
+    transition_model_instance = TransitionModel(
+        state_dim=2,  
+        coq_engine=coq_engine,
+        tokenizer=tokenizer, 
+        llm_tac_wrapper=llm_tac_wrapper
+    )
+
+    # Define observation_model function as before
     def observation_model(observation: np.ndarray, new_state: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
         Defines the observation model.
@@ -134,7 +142,7 @@ def main():
     # Create environment hypotheses
     h1 = EnvironmentHypothesis(
         name="H1",
-        transition_model=transition_model_instance,
+        transition_model=transition_model_instance,  # Use the TransitionModel instance
         observation_model=observation_model,
         process_noise_cov=transition_model_instance.process_noise_cov,
         observation_noise_cov=np.eye(2) * 0.1,
@@ -145,7 +153,7 @@ def main():
 
     h2 = EnvironmentHypothesis(
         name="H2",
-        transition_model=transition_model_instance,
+        transition_model=transition_model_instance,  # Use the TransitionModel instance
         observation_model=observation_model,
         process_noise_cov=transition_model_instance.process_noise_cov,
         observation_noise_cov=np.eye(2) * 0.1,
@@ -162,25 +170,27 @@ def main():
         token_budget=1000
     )
 
-    # Initialize world model
-    goal_position = np.array([5.0, 5.0])  # Example goal position
+
+    # Initialize world model with goal position and threshold
+    goal_position = np.array([5.0, 5.0])  # Example goal position; adjust as needed
     world_model = ProbabilisticWorldModel(
-        transition_model=transition_model_instance,
+        transition_model=transition_model_instance,  # Pass the TransitionModel instance
         observation_model=observation_model,
         goal_position=goal_position,
         goal_threshold=1.0
     )
 
-    # Generate list of actions
-    tactics = ['intro', 'intros', 'split', 'apply', 'assumption', 'contradiction']
+    # Generate list of actions based on the new action space
+    tactics = ['intro', 'induction', 'apply', 'split', 'destruct', 'contradiction']
+    # Remove 'TryLemma' if it's not defined, or ensure it's handled appropriately
     queries = [('FindRelatedType', type_name) for type_name in ['Type', 'Term', 'CircleHIType']]
-    strategies = ['SimplifyGoal']
+    strategies = ['SimplifyGoal']  # Removed 'TryLemma' to avoid undefined tactic errors
 
     actions = [('ApplyTactic', tactic) for tactic in tactics] + \
               [('QueryOntology', *query) for query in queries] + \
               [('ProofStrategy', strategy) for strategy in strategies]
 
-    # Initialize agent
+    # Initialize agent with the new actions and environment
     agent = LLMAIXITACAgent(
         hypotheses=[h1, h2],
         actions=actions,
@@ -198,7 +208,7 @@ def main():
     # Reset environment
     observation = env.reset()
     env.render()
-    goal = ontology.graph.nodes['GoalStatement']['Proposition']
+    goal = '¬(𝑃∨𝑄)⇔¬𝑃∧¬𝑄'  
 
     # Interaction loop
     while not env.done and agent.token_budget > 200:
@@ -217,10 +227,12 @@ def main():
         # Display action and reward
         print(f"Action: {action}, Observation: {observation}, Reward: {reward}, Remaining Tokens: {agent.token_budget}\n")
 
+
     if env.done:
         print("Agent has successfully completed the proof!")
     else:
         print("Agent failed to complete the proof within the token budget.")
+
 
 if __name__ == "__main__":
     main()

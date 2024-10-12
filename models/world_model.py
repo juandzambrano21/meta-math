@@ -58,6 +58,8 @@ class ProbabilisticWorldModel:
     def sample_observation(self, belief_state: Dict[str, Any]) -> np.ndarray:
         mean = belief_state['mean']
         cov = self.observation_noise_cov
+        print(f"mean: {mean}, type: {type(mean)}, shape: {np.shape(mean)}")
+        print(f"cov: {cov}, type: {type(cov)}, shape: {np.shape(cov)}")
         return np.random.multivariate_normal(mean, cov)
 
     def transition_model_func(self, state: np.ndarray, action: Tuple[str, ...], current_goal: str) -> Tuple[np.ndarray, int]:
