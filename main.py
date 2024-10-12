@@ -80,6 +80,14 @@ def main():
           "ProvableIn": "HoTT",
           "Description": "The circle is defined as a higher inductive type with specific constructors.",
           "Complexity": "Intermediate"
+        },
+        {
+          "id": "DeMorgansLaw",
+          "Proposition": "¬(P ∨ Q) ⇔ ¬P ∧ ¬Q",
+          "ProofTerm": "dm_law",
+          "ProvableIn": "Classical Logic",
+          "Description": "De Morgan's Law states that the negation of a disjunction is equivalent to the conjunction of the negations of the individual propositions.",
+          "Complexity": "Fundamental"
         }
       ],
       "HITypeDefinitions": [
@@ -115,7 +123,7 @@ def main():
     # Initialize environment with a provable goal
     env = OntologyNavigationEnv(
         ontology=ontology,
-        goal_node_id='GodelIncompleteness1', 
+        goal_node_id='DeMorgansLaw', #I will start with no provable
         coq_engine=coq_engine
     )
 
