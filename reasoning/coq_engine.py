@@ -198,9 +198,6 @@ class CoqEngine:
         tmpfile_path: Optional[str] = None
         metadata: Dict[str, Any] = {}
         try:
-            print("=========================================")
-            print(code)
-            print("=========================================")
             with tempfile.NamedTemporaryFile(delete=False, suffix=".v") as tmpfile:
                 tmpfile.write(code.encode())
                 tmpfile_path = tmpfile.name

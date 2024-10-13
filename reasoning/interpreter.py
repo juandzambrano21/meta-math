@@ -4,6 +4,7 @@ import numpy as np
 from reasoning.coq_engine import CoqEngine
 from typing import List, Tuple, Optional
 from reasoning.formal_language import parse_reasoning_trace
+import re
 
 class ReasoningInterpreter:
     def __init__(self, agent: 'LLMAIXITACAgent', coq_engine: CoqEngine):
@@ -19,7 +20,7 @@ class ReasoningInterpreter:
         """
         for step in reasoning_steps:
             step_type = step[0]
-            if step_type == 'PredictAgit ction':
+            if step_type == 'PredictAction':
                 action = step[1]
                 if action[0] == 'ApplyTactic':
                     self.handle_apply_tactic(action[1])
@@ -52,7 +53,9 @@ class ReasoningInterpreter:
             tactic,
             self.agent.environment.proof_state['goal']
         )
-        print("Generated Coq Code:\n", coq_code)  # Debug statement
+        coq_code = re.sub(r'```|coq', '', coq_code)
+
+        print("Generated Coq Code:\n", coq_code)  
         self.agent.token_budget -= tokens_used
 
         if not coq_code.strip():
@@ -63,7 +66,7 @@ class ReasoningInterpreter:
 
         if metadata.get('status') == 'success':
             self.agent.environment.proof_state['tactics_applied'].append(tactic)
-            self.agent.environment.update_proof_state_after_success(tactic)
+            self.agent.environment.update_proof_state_after_success(tactic, coq_output=metadata.get('status'))
             print(f"Tactic '{tactic}' applied successfully.")
         else:
             print(f"Coq execution failed: {metadata.get('message', '')}")

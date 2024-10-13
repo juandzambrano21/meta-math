@@ -76,7 +76,7 @@ class OntologyNavigationEnv:
         Applies a Coq tactic to the proof state using CoqEngine.
         """
         coq_code = self.generate_coq_code_for_tactic(tactic)
-        print("Generated Coq Code:\n", coq_code)  # Debug statement
+        print("Generated Coq Code1:\n", coq_code)  # Debug statement
 
         if not coq_code.strip():
             print("Generated Coq code is empty. Skipping execution.")

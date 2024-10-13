@@ -46,21 +46,29 @@ class EnvironmentHypothesis:
         }
 
 
-    def predict_next_state(self, action: Tuple[str, ...], current_goal: str):
+    def predict_next_state(self, action: Tuple[str, ...], current_goal: str) -> Tuple[np.ndarray, int]:
         """
-        Predicts the next belief state based on the action taken.
+        Predicts the next state based on the current state and action.
+
+        :param action: Action taken as a tuple (e.g., ('ApplyTactic', 'intro')).
+        :param current_goal: The current proof goal as a string.
+        :return: Tuple of predicted next state and tokens used.
         """
         if self.belief_state is None:
-            raise ValueError("Belief state not initialized.")
+            raise ValueError("Belief state is not initialized.")
 
-        # Predict the next state using the transition model
-        new_mean, _ = self.transition_model(self.belief_state['mean'], action, current_goal)
-        new_cov = self.belief_state['cov'] + self.process_noise_cov
+        # Use the transition_model to get the next state and tokens used
+        try:
+            new_state, tokens_used = self.transition_model(
+                self.belief_state['mean'],
+                action,
+                current_goal
+            )
+        except Exception as e:
+            print(f"Error in transition_model_func for hypothesis '{self.name}': {e}")
+            return self.belief_state['mean'], 0  # Return current state and zero tokens used
 
-        self.belief_state = {
-            'mean': new_mean,
-            'cov': new_cov
-        }
+        return new_state, tokens_used
 
 
     def update_belief_state(self, observation: np.ndarray):
@@ -117,3 +125,4 @@ class EnvironmentHypothesis:
             likelihood = 1e-10  # Assign a small likelihood in case of numerical issues
 
         return likelihood
+

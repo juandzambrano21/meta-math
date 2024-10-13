@@ -16,25 +16,32 @@ from models.transition_model import TransitionModel  # Import the TransitionMode
 import numpy as np
 from typing import Tuple
 
+
 def main():
+    # Load environment variables from .env file
     load_dotenv()
+    
+    # Initialize components
     tokenizer = Tokenizer()
     coq_engine = CoqEngine()
     observation_encoder = ObservationEncoder(input_dim=2, embedding_dim=32)
     observation_encoder.eval()
 
+    # Retrieve OpenAI API key
     api_key = os.getenv('OPENAI_API_KEY')
     if not api_key:
         raise ValueError("OpenAI API key not found. Please set 'OPENAI_API_KEY' in your environment variables.")
+    
+    # Initialize LLM TAC Wrapper
     llm_tac_wrapper = LLMTACWrapper(api_key=api_key, model_name='gpt-4o', tokenizer=tokenizer)
 
+    # Initialize TransitionModel
     transition_model_instance = TransitionModel(
         state_dim=2,
         coq_engine=coq_engine,
         tokenizer=tokenizer,
         llm_tac_wrapper=llm_tac_wrapper
     )
-
 
     # Load ontology JSON
     ontology_json = '''
@@ -118,23 +125,17 @@ def main():
     }
     '''
 
+    # Initialize Ontology
     ontology = Ontology(ontology_json)
 
-    # Initialize environment with a provable goal
+    # Initialize environment with the specified goal
     env = OntologyNavigationEnv(
         ontology=ontology,
-        goal_node_id='DeMorgansLaw', #I will start with no provable
+        goal_node_id='DeMorgansLaw',  # Starting with the goal 'DeMorgansLaw'
         coq_engine=coq_engine
     )
 
-    transition_model_instance = TransitionModel(
-        state_dim=2,  
-        coq_engine=coq_engine,
-        tokenizer=tokenizer, 
-        llm_tac_wrapper=llm_tac_wrapper
-    )
-
-    # Define observation_model function as before
+    # Define observation_model function
     def observation_model(observation: np.ndarray, new_state: np.ndarray) -> Tuple[np.ndarray, np.ndarray]:
         """
         Defines the observation model.
@@ -178,17 +179,18 @@ def main():
         token_budget=1000
     )
 
-
-    # Initialize world model with goal position and threshold
+    # Initialize world model with the correct parameters
     goal_position = np.array([5.0, 5.0])  # Example goal position; adjust as needed
     world_model = ProbabilisticWorldModel(
-        transition_model=transition_model_instance,  # Pass the TransitionModel instance
+        transition_model_func=transition_model_instance.transition_model_func,  # Pass the TransitionModel's function
         observation_model=observation_model,
+        process_noise_cov=transition_model_instance.process_noise_cov,
         goal_position=goal_position,
-        goal_threshold=1.0
+        goal_threshold=0.5,
+        hypotheses={'H1': h1, 'H2': h2}
     )
 
-    # Generate list of actions based on the new action space
+    # Generate list of actions based on the action space
     tactics = ['intro', 'induction', 'apply', 'split', 'destruct', 'contradiction']
     # Remove 'TryLemma' if it's not defined, or ensure it's handled appropriately
     queries = [('FindRelatedType', type_name) for type_name in ['Type', 'Term', 'CircleHIType']]

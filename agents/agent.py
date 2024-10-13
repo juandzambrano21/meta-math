@@ -3,7 +3,7 @@
 import torch
 import numpy as np
 import random
-from typing import List, Tuple, Dict, Any, Optional
+from typing import List, Tuple, Dict, Any, Optional, Callable
 
 from agents.bayesian_updater import BayesianUpdater
 from agents.environment_hypothesis import EnvironmentHypothesis
@@ -18,7 +18,6 @@ from knowledge.ontology import Ontology
 from environments.ontology_navigation import OntologyNavigationEnv
 from models.reward_function import TokenAwareRewardFunction
 from models.world_model import ProbabilisticWorldModel
-from models.transition_model import TransitionModel  # Import the TransitionModel class
 
 
 class LLMAIXITACAgent:
@@ -59,16 +58,18 @@ class LLMAIXITACAgent:
         self.observation_encoder = observation_encoder
         self.ontology = ontology
 
-        # Initialize BayesianUpdater with prior distribution
-        prior_distribution = {hypo.name: 1.0 / len(hypotheses) for hypo in hypotheses}
-        self.bayesian_updater = BayesianUpdater(prior_distribution)
+        # Initialize BayesianUpdater with prior_distribution and hypotheses
+        prior_distribution = {h.name: 1.0 / len(hypotheses) for h in hypotheses}
+        self.bayesian_updater = BayesianUpdater(hypotheses={hypo.name: hypo for hypo in hypotheses},
+            prior_distribution=prior_distribution )
 
-        # Initialize MCTS planner
+        # Initialize MCTS planner with BayesianUpdater
         self.mcts = TokenAwareMCTS(
             world_model=self.world_model,
             reward_function=self.reward_function,
             actions=self.actions,
-            tokenizer=self.tokenizer
+            tokenizer=self.tokenizer,
+           # bayesian_updater=self.bayesian_updater  # Pass BayesianUpdater if required
         )
 
         self.history = []
@@ -129,7 +130,7 @@ class LLMAIXITACAgent:
         else:
             print("No reasoning trace generated. Skipping reasoning steps.")
 
-        # Aggregate belief state from posterior
+        # Aggregate belief state from BayesianUpdater
         belief_state = self.aggregate_belief_state()
 
         if belief_state is None or 'mean' not in belief_state or 'cov' not in belief_state:
@@ -148,13 +149,11 @@ class LLMAIXITACAgent:
 
         # Use MCTS to select action, passing current_goal
         action = self.mcts.search(belief_state, self.token_budget, current_goal)
-        self.token_budget = self.mcts.current_token_budget 
-
-
-        # If the interpreter set a preferred action, use it
-        if self.preferred_action is not None:
-            action = self.preferred_action
-            self.preferred_action = None  # Reset for next cycle
+        # Assuming `search` now returns only the best action
+        # If it returns additional values, adjust accordingly
+        # For example: action, tokens_used = self.mcts.search(...)
+        # Here, it's assumed to return only action
+        # Adjust based on your `TokenAwareMCTS.search` implementation
 
         if action is None:
             print("MCTS did not return a valid action. Selecting a random exploratory action.")
@@ -200,8 +199,8 @@ class LLMAIXITACAgent:
         combined_cov = None
 
         for hypo_name, prob in posterior.items():
-            hypo = self.hypotheses[hypo_name]
-            if hypo.belief_state is None:
+            hypo = self.hypotheses.get(hypo_name)
+            if hypo is None or hypo.belief_state is None:
                 continue
             if combined_mean is None:
                 combined_mean = prob * hypo.belief_state['mean']
@@ -235,15 +234,15 @@ class LLMAIXITACAgent:
         proof_state = observation.get('proof_state', self.environment.proof_state)
 
         # Convert proof_state to numpy array for BayesianUpdater
-        if proof_state['goal'] is None:
+        if proof_state.get('goal') is None:
             # Proof completed; no further observations
             observation_array = np.array([0.0, 0.0])  # Example placeholder
         else:
             # Example: Convert goal string length and number of tactics applied to array
-            observation_array = np.array([len(proof_state['goal']), len(proof_state['tactics_applied'])])
+            observation_array = np.array([len(proof_state.get('goal', '')), len(proof_state.get('tactics_applied', []))])
 
         # Update Bayesian posterior
-        self.bayesian_updater.update(action, observation_array, self.hypotheses)
+            self.bayesian_updater.update(action, observation_array, proof_state.get('goal', ''))
 
         # Update the agent's proof state based on environment info
         self.environment.proof_state = proof_state

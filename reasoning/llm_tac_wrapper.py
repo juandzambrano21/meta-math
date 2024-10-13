@@ -63,7 +63,7 @@ class LLMTACWrapper:
                 )
 
                 reasoning_trace = response.choices[0].message.content.strip()
-                print(reasoning_trace)
+                print(response)
                 reasoning_tokens = self.tokenizer.count_tokens(reasoning_trace)
                 total_tokens_used = reasoning_tokens + prompt_tokens
 
