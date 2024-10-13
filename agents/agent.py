@@ -149,11 +149,6 @@ class LLMAIXITACAgent:
 
         # Use MCTS to select action, passing current_goal
         action = self.mcts.search(belief_state, self.token_budget, current_goal)
-        # Assuming `search` now returns only the best action
-        # If it returns additional values, adjust accordingly
-        # For example: action, tokens_used = self.mcts.search(...)
-        # Here, it's assumed to return only action
-        # Adjust based on your `TokenAwareMCTS.search` implementation
 
         if action is None:
             print("MCTS did not return a valid action. Selecting a random exploratory action.")
