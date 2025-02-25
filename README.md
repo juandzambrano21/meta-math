@@ -6,7 +6,7 @@
 
 ## Abstract
 
-This paper presents a formal mathematical framework for an AI agent designed for continuous navigation in structured environments. The agent leverages a combination of ontologies, Bayesian updating, Kalman filters, large language models (LLMs), token-aware Monte Carlo Tree Search (MCTS), and Homotopy Type Theory (HoTT). A Coq proof assistant is integrated within a Docker environment for computational verification of HoTT-based hypotheses, ensuring robust and verifiable reasoning.
+This project presents a formal mathematical framework for an AI agent designed for continuous navigation in structured environments for automated theorem solving. The agent leverages a combination of ontologies, Bayesian updating, Kalman filters, large language models (LLMs), token-aware Monte Carlo Tree Search (MCTS), and Homotopy Type Theory (HoTT). A Coq proof assistant is integrated within a Docker environment for computational verification of HoTT-based hypotheses, ensuring robust and verifiable reasoning.
 
 ---
 
